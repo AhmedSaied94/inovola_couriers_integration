@@ -4,6 +4,6 @@ from accounts.views import ConfirmSignUpView, UserSignUpView
 
 
 urlpatterns = [
-    path('Signup/', UserSignUpView.as_view()),
-    path('ConfirmSignUp/', ConfirmSignUpView.as_view())
+    path('User/', UserSignUpView.as_view()),  # post / get / put
+    path('ConfirmSignUp/<str:activation_code>', ConfirmSignUpView.as_view())
 ]

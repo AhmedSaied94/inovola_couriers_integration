@@ -66,15 +66,17 @@ class MapField(models.Model):
         return f"{self.local_name} --> {self.courier_field_name} ({self.courier.name})"
 
 
-class Order(models.Model):
-
-    
+class WayBill(models.Model):
+    # must be a foreign key from Orders Table
+    order = models.CharField(_("order"), max_length=50)
+    courier = models.ForeignKey("couriers.Courier", verbose_name=_(
+        "Courier"), on_delete=models.CASCADE)
+    status = models.CharField(_("Status"), max_length=50)
+    courier_order_id = models.CharField(_("Courier Order ID"), max_length=100)
 
     class Meta:
-        verbose_name = _("Order")
-        verbose_name_plural = _("Orders")
+        verbose_name = _("Way Bill")
+        verbose_name_plural = _("Way Bills")
 
     def __str__(self):
         return self.name
-
-

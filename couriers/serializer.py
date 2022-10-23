@@ -1,6 +1,6 @@
 import requests
 from rest_framework import serializers
-from couriers.models import Courier, MapField
+from couriers.models import Courier, MapField, WayBill
 
 
 class MapFieldSerializer(serializers.ModelSerializer):
@@ -27,6 +27,7 @@ class CourierGetSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_courier_options(self, obj):
+        # this field used to retrive courier custom data from courier web site to let the entry choose from them when create way bill
         options = {}
         fields = MapField.objects.filter(
             courier=obj, courier_values__isnull=False)
@@ -46,3 +47,23 @@ class CourierGetSerializer(serializers.ModelSerializer):
         if obj.servies_types_end_point:
             options['servies_types'] = requests.get(
                 f'{obj.domain}{obj.servies_types_end_point}', headers=headers).json()
+
+
+class WayBillSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = WayBill
+        fields = '__all__'
+
+
+class WayBillGetSerializer(serializers.ModelSerializer):
+
+    courier = CourierGetSerializer()
+    courier_order_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WayBill
+        fields = '__all__'
+
+    def get_courier_order_label(self, obj):
+        return self.context.get('courier_order_label', None)

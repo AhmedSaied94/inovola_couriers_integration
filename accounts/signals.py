@@ -24,6 +24,7 @@ def get_random_password(password_length=20):
     return "".join(random.choice(characters) for i in range(password_length))
 
 
+# send email to user after sign up to verify email
 @receiver(post_save, sender=User)
 def send_email_after_signup(instance, created, **kwargs):
     if not instance.is_active and not instance.activation_code:

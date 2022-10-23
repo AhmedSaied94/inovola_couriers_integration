@@ -1,21 +1,26 @@
 from django.shortcuts import get_object_or_404, render
+import requests
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView, CreateAPIView, UpdateAPIView, DestroyAPIView
 from rest_framework.permissions import IsAuthenticated
-from couriers.models import Courier, MapField
+from couriers.models import Courier, MapField, WayBill
 from django.db import transaction
-from couriers.serializer import CourierGetSerializer, CourierSerializer, MapFieldSerializer
+from couriers.serializer import CourierGetSerializer, CourierSerializer, MapFieldSerializer, WayBillGetSerializer, WayBillSerializer
 # Create your views here.
 
 
 class ParentView(RetrieveAPIView, ListAPIView, CreateAPIView, UpdateAPIView, DestroyAPIView):
+    # custom Automator Class
     model = None
     serializer_class = None
     serializer_get_class = None
     permission_classes = [IsAuthenticated]
+    exclude = []
 
     def dispatch(self, request, *args, **kwargs):
+        if request.method in self.exclude:
+            return Response("method not allowed", status=status.HTTP_403_FORBIDDEN)
         if request.method == 'GET' and self.serializer_get_class is not None:
             self.serializer_class = self.serializer_get_class
         return super().dispatch(request, *args, **kwargs)
@@ -39,6 +44,7 @@ class CourierView(ParentView):
     serializer_get_class = CourierGetSerializer
 
     def prepare_courier_fields(self, courier, data=dict):
+        # prepare map fields data before passing it to their serializer
         create_fields = data.get('create', None)
         cancel_fields = data.get('cancel', None)
         prepared_data = []
@@ -52,11 +58,10 @@ class CourierView(ParentView):
                     "courier_object_name": key,
                     "courier": courier.id
                 })
-                # MapField.objects.create(
-                #     **field, courier_proccess_name='create', courier_object_name=key, courier=courier)
         return prepared_data
 
     def post(self, request, *args, **kwargs):
+        # post request body example
         """
         {
             courier:{
@@ -299,8 +304,12 @@ class CourierView(ParentView):
 
 
 class WayBillView(ParentView):
+    model = WayBill
+    serializer_class = WayBillSerializer
+    serializer_get_class = WayBillGetSerializer
 
     def prepare_data(self, order, courier):
+        # prepare order data object before passing it to the request
         courier_fields = MapField.objects.filter(courier=courier)
         main_fields = courier_fields.filter(courier_object_name='main')
         data = {}
@@ -333,8 +342,10 @@ class WayBillView(ParentView):
                     field.local_name)
             else:
                 data[field.courier_field_name] = order[field.local_name]
+        return data
 
     def post(self, request, *args, **kwargs):
+        # order data should come from order model
         order = {
             "sender": {
                 "address_type": "Work",
@@ -372,4 +383,80 @@ class WayBillView(ParentView):
         }
         courier = get_object_or_404(Courier, pk=kwargs.get('courier', None))
         prepared_data = self.prepare_data(order, courier)
-        return super().post(request, *args, **kwargs)
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {courier.token}"
+        }
+        create_request = requests.post(
+            url=f"{courier.domain}{courier.create_end_point}", data=prepared_data, headers=headers)
+        if create_request.status_code not in [200, 201, 202]:
+            return Response(create_request.json(), status=create_request.status_code)
+        way_bill_data = {
+            "order": "order_1",
+            "courier": courier.id,
+            "status": "status_1",
+        }
+        serializer = self.serializer_class(data=way_bill_data)
+        if serializer.is_valid(raise_exception=True):
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request, pk):
+        way_bill = self.get_object()
+        courier = way_bill.courier
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {courier.token}"
+        }
+        status_request = requests.get(
+            url=f"{courier.domain}{courier.status_end_point}/{way_bill.courier_order_id}", headers=headers)
+        if status_request.status_code != 200:
+            return Response(status_request.json(), status_request.status_code)
+        request.data.update({
+            "status": status_request.json().get('status')
+        })
+        return super().put(request, pk)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.method == 'GET' and self.kwargs.get('pk', None):
+            way_bill = self.get_object()
+            courier = way_bill.courier
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {courier.token}"
+            }
+            status_request = requests.get(
+                url=f"{courier.domain}{courier.retrive_end_point}/{way_bill.courier_order_id}", headers=headers)
+            if status_request.status_code != 200:
+                return Response(status_request.json(), status_request.status_code)
+            context["courier_order_label"] = status_request.json().get('label')
+        return context
+
+
+class WayBillCancelView(ParentView):
+    model = WayBill
+    serializer_class = WayBillSerializer
+    exclude = ['GET', 'POST', 'PATCH', 'DELETE']
+
+    def put(self, request, pk=None):
+        way_bill = self.get_object()
+        courier = way_bill.courier
+        if not courier.cancelable:
+            return Response('Operation not allowed', status_code=status.HTTP_403_FORBIDDEN)
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {courier.token}"
+        }
+        status_request = requests.get(
+            url=f"{courier.domain}{courier.cancel_end_point}/{way_bill.courier_order_id}", headers=headers)
+        if status_request.status_code != 200:
+            return Response(status_request.json(), status_request.status_code)
+        request.data.update({
+            "status": "canceld"
+        })
+        return super().put(request, pk)
