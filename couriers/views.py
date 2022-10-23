@@ -326,9 +326,13 @@ class WayBillView(ParentView):
                             courier_object_name=nested_field.courier_field_name)
                         data[field.courier_field_name][nested_field.courier_field_name] = [
                             {f.courier_field_name: item[f.local_name.split('__')[1]] for f in new_nested} for item in order[nested_field.local_name]]
-                    splitted = nested_field.local_name.split('__')
-                    data[field.courier_field_name][nested_field.courier_field_name] = order[splitted[0]
-                                                                                            ][splitted[1]] if len(splitted) > 1 else order[splitted[0]]
+                    elif nested_field.from_request:
+                        data[field.courier_field_name][nested_field.courier_field_name] = self.request.data.get(
+                            nested_field.local_name)
+                    else:
+                        splitted = nested_field.local_name.split('__')
+                        data[field.courier_field_name][nested_field.courier_field_name] = order[splitted[0]
+                                                                                                ][splitted[1]] if len(splitted) > 1 else order[splitted[0]]
             elif field.field_type == 'array':
                 nested_fields = courier_fields.filter(
                     courier_object_name=field.courier_field_name)
